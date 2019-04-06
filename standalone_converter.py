@@ -95,7 +95,7 @@ def bmp_to_tilemap(bmp, enc):
         colours[colour] = timg
 
     width, height, cs = arr.shape
-    base = Image.new('RGB', (width*size, height*size), color=0)
+    base = Image.new('RGB', (height*size, width*size), color=0)
 
     for r in range(width):
         for c in range(height):
@@ -106,7 +106,7 @@ def bmp_to_tilemap(bmp, enc):
 
     return base
 
-def run_wfc(N, height, width):
+def run_wfc(N, width, height):
     tree = ET.parse('samples.xml')
     for child in tree.getroot():
         child.attrib['name'] = 'PYOUT'
@@ -139,7 +139,7 @@ def tilemap_to_wfc(path, size, N=3, wfc_size=(32,32)):
 if __name__ == "__main__":
     from inspect import cleandoc
 
-    tilemap = tilemap_to_wfc('examples/forest.png', 16, N=2, wfc_size=(32,32))
+    tilemap = tilemap_to_wfc('examples/smb.png', 16, N=2, wfc_size=(128,16))
     tilemap.save('output.png')
     tilemap.show()
     
