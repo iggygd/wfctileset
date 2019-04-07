@@ -139,7 +139,7 @@ def tilemap_to_wfc(path, size, N=3, wfc_size=(32,32)):
 if __name__ == "__main__":
     from inspect import cleandoc
 
-    tilemap = tilemap_to_wfc('examples/vania.png', 16, N=2, wfc_size=(128,16))
+    tilemap = tilemap_to_wfc('examples/pkgs.png', 16, N=2, wfc_size=(64,64))
     tilemap.save('output.png')
     tilemap.show()
     
