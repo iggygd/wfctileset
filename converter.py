@@ -13,6 +13,7 @@ def map2hash(img, size):
     logging.info(f'img-size:{width, height}')
     
     twidth, theight = int(width/size), int(height/size) #TILE_WIDTH, TILE_HEIGHT
+    logging.info(f'tilemap-size:{twidth, theight}')
     hashmap = np.zeros((twidth, theight), dtype=np.uint64)
     encoding = dict()
 
@@ -26,10 +27,33 @@ def map2hash(img, size):
             thash = blake2b(tstr, digest_size=8).digest()
             tbytes = int.from_bytes(thash, 'big')
 
-            encoding[tbytes] = tstr
-            hashmap[col, row] = tbytes
+            encoding[tbytes] = tile
+            hashmap[row, col] = tbytes
 
     logging.info(f'total-tiles:{twidth*theight}')
     logging.info(f'finished-hashmap:{hashmap.shape}')
 
     return encoding, hashmap
+
+def hash2map(arr, enc, size=16):
+    '''Arguments:
+    arr -- an numpy array.
+    enc -- dict of {hash: PIL.Image}
+    size -- size of tile (default=16)
+    '''
+    logging.debug(f'encoding:{len(enc)}')
+    logging.debug(f'size:{size}')
+    logging.debug(enc)
+
+    row, col = arr.shape
+    base = Image.new('RGBA', (col*size, row*size), color=0)
+
+    for r in range(row):
+        for c in range(col):
+            hash_ = next(iter(arr[r, c]))
+            base.paste(enc[hash_], box=(c*size, r*size))
+
+    base.save(f'debug.png')
+    logging.info(f'WFCMAP({row}-{col})->debug.png')
+
+    return base
