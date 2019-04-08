@@ -7,7 +7,7 @@ import converter
 import sys
 
 logging.basicConfig()
-logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.INFO)
 
 
 RIGHT = (1, 0)
@@ -17,12 +17,18 @@ DOWN = (0, -1)
 
 DIRS = [RIGHT,UP,LEFT,DOWN]
 
+class Contradiction(Exception):
+    pass
+
 class WaveFunction():
     '''modified from 
     https://github.com/robert/wavefunction-collapse/blob/master/main.py'''
     @staticmethod
     def mk(size, weights):
         coefficients = WaveFunction.init_coefficients(size, weights.keys())
+        changes = np.zeros(coefficients.shape)
+
+        logging.debug(f'init-WaveFunction():{coefficients.shape, changes.shape}')
         return WaveFunction(coefficients, weights)
 
     @staticmethod
@@ -41,17 +47,25 @@ class WaveFunction():
 
         return True
 
+    def f_collapsed(self):
+        for coeff in self.coeffs.flat:
+            if len(coeff) == 0:
+                raise Contradiction
+
+        return self.coeffs
+
     def collapse(self, pos):
         possibilities = tuple(self.coeffs[pos])
         weights = tuple(self.weights[tile] for tile in possibilities)
 
         choice = random.choices(possibilities, weights=weights)
-        logging.debug(f'{pos}:{choice}')
+        #logging.debug(f'{pos}:{choice}')
         self.coeffs[pos] = choice
 
     def shannon_entropy(self, tile, cache=None):
-        if cache.tile == tile:
-            return cache.entropy
+        h = frozenset(tile)
+        if h in cache:
+            return cache[h]
 
         sum_weights = 0
         sum_log_weights = 0
@@ -60,9 +74,9 @@ class WaveFunction():
             sum_weights += weight
             sum_log_weights += weight * np.log(weight)
 
-        return np.log(sum_weights) - (sum_log_weights / sum_weights)
-
-Cache = namedtuple('Cache', 'entropy tile')
+        entropy = np.log(sum_weights) - (sum_log_weights / sum_weights)
+        cache[h] = entropy
+        return entropy
 
 class Model():
     '''modified from 
@@ -74,18 +88,20 @@ class Model():
 
         self.wf = WaveFunction.mk(size, weights)
 
-    def run(self):
-        i = 0
+    def run(self, limit=10):
+        cache = {}
+
         while not self.wf.q_collapsed():
-            self.iterate()
-            i += 1
-            logging.debug(f'iter:{i}')
+            self.iterate(cache)
 
-        return self.wf.coeffs
+        c_map = self.wf.f_collapsed()
+        success = True
 
-    def iterate(self):
-        entropy, pos = self.minimum_entropy()
-        logging.debug(f'chosen-tile:{pos, entropy}')
+
+        return c_map
+
+    def iterate(self, cache):
+        entropy, pos = self.minimum_entropy(cache)
         self.wf.collapse(pos)
         self.propagate(pos)
 
@@ -99,23 +115,27 @@ class Model():
             removal = set()
             for other, dir in neighbours(self.wf.coeffs, c_pos):
                 for o_tile in other:
-                    if not any([(c_tile, o_tile, dir) in self.compats for c_tile in c_tiles]):
+                    if not any((c_tile, o_tile, dir) in self.compats for c_tile in c_tiles):
                         o_pos = add(c_pos, dir)
                         removal.add((o_tile, o_pos))
-                        stack.append(o_pos)
+                        if o_pos not in stack:
+                            stack.append(o_pos)
 
             for o_tile, o_pos in removal:
                 self.wf.coeffs[o_pos].remove(o_tile)
 
-    def minimum_entropy(self):
-        cache = Cache(None, None)
+    def minimum_entropy(self, cache):
         minimum = None
         for x, row in enumerate(self.wf.coeffs):
             for y, tile in enumerate(row):
-                if len(self.wf.coeffs[(x,y)]) == 1:
+                possibilities = len(self.wf.coeffs[(x,y)])
+                if possibilities == 1:
                     continue
+                elif possibilities == 0:
+                    raise Contradiction
+
                 entropy = self.wf.shannon_entropy(tile, cache) - np.random.random() / 100
-                cache = Cache(entropy, tile)
+                #cache = (entropy, tile)
                 
                 if minimum is None or entropy < minimum:
                     minimum = entropy
@@ -148,6 +168,10 @@ def parse_array(arr):
             for adj_tile, dir in neighbours(arr, (x,y)):
                 compatibilities.add((tile, adj_tile, dir))
 
+    for tile, weight in weights.items():
+        weights[tile] = weight
+
+
     logging.debug(f'weights:{weights}')
     logging.debug(f'compatibilities_total:{len(compatibilities)}')
     logging.debug(f'compatibilities_memory:{sys.getsizeof(compatibilities)}')
@@ -157,12 +181,28 @@ def parse_array(arr):
 if __name__ == "__main__":
     from PIL import Image
 
-    img = Image.open('examples/loz.png')
-    enc, hmap = converter.map2hash(img, 16)
+    TILE_SIZE = 16
+    FILE_PATH = 'examples/cave32.png'
+
+    img = Image.open(FILE_PATH)
+    enc, hmap = converter.map2hash(img, TILE_SIZE)
     compats, weights = parse_array(hmap)
 
-    wsize = (16, 16)
-    wfc = Model(wsize, weights, compats)
-    output = wfc.run()
+    wsize = (64, 64)
+    iterations = 2
 
-    image = converter.hash2map(output, enc, 16)
+    for iteration in range(iterations):
+        success = False
+        i, limit = 0, 10
+
+        while not success or i > limit:
+            try:
+                wfc = Model(wsize, weights, compats)
+                output = wfc.run()
+
+                image = converter.hash2map(output, enc, TILE_SIZE)
+                image.save(f'wfcout/WFCOUT_{iteration}.png')
+                success = True
+            except Contradiction:
+                logging.warning('CONTRADICTION')
+                i += 1
